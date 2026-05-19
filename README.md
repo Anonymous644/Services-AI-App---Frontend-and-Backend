@@ -122,6 +122,15 @@ All steps happen inside the same chat conversation. The AI maintains state acros
 
 ---
 
+## Videos
+
+| | Link |
+|---|---|
+| Submission Demo | [Watch on YouTube](https://youtu.be/KyEYuAeLlb8) |
+| Antigravity Usage | [Watch on YouTube](https://youtu.be/NHvDt33Y5Ho) |
+
+---
+
 ## Submitted To
 
 **Google Hackathon 2026**  
