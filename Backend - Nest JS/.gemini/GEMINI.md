@@ -1,0 +1,2 @@
+- Always Store all the artifacts you have created in artifact folder
+- Before making a plan for any long task or phase, ask me questions about it so that there are no logical gaps in the logics and functionality

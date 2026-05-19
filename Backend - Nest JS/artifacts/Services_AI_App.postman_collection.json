@@ -1,0 +1,278 @@
+{
+  "info": {
+    "name": "Services AI App",
+    "_postman_id": "services-ai-app-collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Full API testing collection for Services AI App"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8000" },
+    { "key": "customerToken", "value": "" },
+    { "key": "providerToken", "value": "" },
+    { "key": "bookingId", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1. Auth",
+      "item": [
+        {
+          "name": "Customer Signup",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) pm.collectionVariables.set('customerToken', res.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/signup",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"customer@test.com\",\n  \"password\": \"test1234\",\n  \"firstName\": \"Ali\",\n  \"lastName\": \"Raza\",\n  \"role\": \"CUSTOMER\",\n  \"location\": {\n    \"address\": \"F-8, Islamabad\",\n    \"city\": \"Islamabad\",\n    \"geo\": {\n      \"type\": \"Point\",\n      \"coordinates\": [73.0715, 33.7141]\n    }\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Customer Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) pm.collectionVariables.set('customerToken', res.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"customer@test.com\",\n  \"password\": \"test1234\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Provider Login (Seeded)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const res = pm.response.json();",
+                  "if (res.token) pm.collectionVariables.set('providerToken', res.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ahmed.khan@provider.com\",\n  \"password\": \"provider123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Profile (Customer)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/me",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          }
+        },
+        {
+          "name": "Get Profile (Provider)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/auth/me",
+            "header": [{ "key": "Authorization", "value": "Bearer {{providerToken}}" }]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Bookings — Customer",
+      "item": [
+        {
+          "name": "List My Bookings",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/bookings",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          }
+        },
+        {
+          "name": "List Bookings (by status)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings?status=COMPLETED",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "bookings"],
+              "query": [{ "key": "status", "value": "COMPLETED" }]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          }
+        },
+        {
+          "name": "Get Booking Details",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/bookings/{{bookingId}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          }
+        },
+        {
+          "name": "Pay for Booking",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/bookings/{{bookingId}}/pay",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          }
+        },
+        {
+          "name": "Submit Review (Customer)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/bookings/{{bookingId}}/review",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{customerToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating\": 5,\n  \"comment\": \"Excellent work, very professional!\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Bookings — Provider",
+      "item": [
+        {
+          "name": "List Provider Bookings",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/bookings",
+            "header": [{ "key": "Authorization", "value": "Bearer {{providerToken}}" }]
+          }
+        },
+        {
+          "name": "Get Booking Details",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/bookings/{{bookingId}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{providerToken}}" }]
+          }
+        },
+        {
+          "name": "Initialize Booking",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/bookings/{{bookingId}}/status",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{providerToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"INITIALIZED\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Mark as Completed",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/bookings/{{bookingId}}/status",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{providerToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"PROVIDER_COMPLETED\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Cancel Booking",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/api/bookings/{{bookingId}}/status",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{providerToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"CANCELLED\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Submit Review (Provider)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/api/bookings/{{bookingId}}/review",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{providerToken}}" },
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating\": 4,\n  \"comment\": \"Good customer, clear instructions\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Notifications",
+      "item": [
+        {
+          "name": "Get Notifications (Customer)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/bookings/notifications/list",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }]
+          }
+        },
+        {
+          "name": "Get Notifications (Provider)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api/bookings/notifications/list",
+            "header": [{ "key": "Authorization", "value": "Bearer {{providerToken}}" }]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. WebSocket (Socket.IO)",
+      "item": [
+        {
+          "name": "⚡ READ ME — WebSocket Setup",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/api",
+            "description": "WebSocket testing requires Postman's Socket.IO tab:\n\n1. New > Socket.IO Request\n2. URL: http://localhost:8000/chat\n\nAUTH (pick one):\n  Option A — Headers tab: Add header 'Authorization' = 'Bearer <customerToken>'\n  Option B — Query param: Change URL to http://localhost:8000/chat?token=<customerToken>\n\n3. Click Connect\n4. You should receive a 'chat_history' event\n\n--- EVENTS TO EMIT ---\n\nEmit 'send_message':\n{ \"content\": \"I need my AC repaired\" }\n\nEmit 'action_response' to select provider:\n{ \"actionType\": \"SELECT_PROVIDER\", \"data\": { \"providerId\": \"<id>\" } }\n\nEmit 'action_response' to pay:\n{ \"actionType\": \"PAY\", \"data\": { \"bookingId\": \"<id>\" } }\n\nEmit 'action_response' to confirm:\n{ \"actionType\": \"CONFIRM_COMPLETION\", \"data\": { \"bookingId\": \"<id>\", \"confirmed\": true } }\n\nEmit 'action_response' to review:\n{ \"actionType\": \"SUBMIT_REVIEW\", \"data\": { \"rating\": 5, \"comment\": \"Great!\" } }\n\n--- EVENTS TO LISTEN FOR ---\nthinking, ai_thinking, stream, message_complete, chat_history, error"
+          }
+        }
+      ]
+    }
+  ]
+}

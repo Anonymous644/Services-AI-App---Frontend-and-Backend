@@ -1,0 +1,410 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum UserRole {
+  CUSTOMER
+  PROVIDER
+}
+
+enum BookingStatus {
+  UNPAID
+  PENDING
+  INITIALIZED
+  PROVIDER_COMPLETED
+  COMPLETED
+  DISPUTED
+  CANCELLED
+}
+
+enum CancelledBy {
+  CUSTOMER
+  PROVIDER
+}
+
+enum TransactionType {
+  PAYMENT
+  REFUND
+  PROVIDER_PAYOUT
+  PLATFORM_FEE
+}
+
+enum TransactionStatus {
+  SUCCESS
+  FAILED
+  ON_HOLD
+}
+
+enum NotificationType {
+  NEW_BOOKING
+  BOOKING_INITIALIZED
+  BOOKING_COMPLETED
+  BOOKING_CANCELLED
+  BOOKING_DISPUTED
+  PAYMENT_RECEIVED
+  GENERAL
+}
+
+enum ChatMessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum DisputeStatus {
+  OPEN
+  RESOLVED
+  CLOSED
+}
+
+enum AIMemoryStep {
+  GATHERING_INFO
+  SEARCHING_PROVIDERS
+  AWAITING_SELECTION
+  AWAITING_PAYMENT
+  BOOKING_CREATED
+  AWAITING_COMPLETION
+  AWAITING_REVIEW
+  COMPLETED
+}
+
+// ==================== EMBEDDED TYPES ====================
+
+type GeoPoint {
+  type        String  @default("Point") // Always "Point" for GeoJSON
+  coordinates Float[] // [longitude, latitude]
+}
+
+type Location {
+  address String
+  city    String
+  state   String?
+  country String   @default("PK")
+  geo     GeoPoint
+}
+
+type Availability {
+  dayOfWeek Int // 0=Sunday ... 6=Saturday
+  startTime String // "09:00" (HH:mm)
+  endTime   String // "17:00" (HH:mm)
+}
+
+type MemoryGeoPoint {
+  type        String? @default("Point")
+  coordinates Float[]
+}
+
+type MemoryLocation {
+  address String?
+  city    String?
+  geo     MemoryGeoPoint?
+}
+
+// ==================== MODELS ====================
+
+/// Unified user model for both Customer and Provider roles.
+/// Provider-specific fields (bio, experience, rating, etc.) are null for customers.
+model User {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  email         String   @unique
+  password      String
+  firstName     String
+  lastName      String
+  phone         String?
+  role          UserRole
+  avatarUrl     String?
+  fcmToken      String?
+  creditBalance Float    @default(0)
+  location      Location
+
+  // --- Provider-only fields (null for customers) ---
+  bio              String?
+  experience       Int? // Years of experience
+  rating           Float?            @default(0)
+  totalJobs        Int?              @default(0)
+  serviceRadius    Float? // Max distance in km the provider is willing to travel
+  availability     Availability[]
+  isVerified       Boolean?          @default(false)
+  providerServices ProviderService[]
+
+  // --- Relations ---
+  bookingsAsCustomer Booking[]      @relation("CustomerBookings")
+  bookingsAsProvider Booking[]      @relation("ProviderBookings")
+  chat               Chat?
+  notifications      Notification[]
+  transactionsFrom   Transaction[]  @relation("TransactionFrom")
+  transactionsTo     Transaction[]  @relation("TransactionTo")
+  reviewsGiven       Review[]       @relation("ReviewsGiven")
+  reviewsReceived    Review[]       @relation("ReviewsReceived")
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
+
+/// Flat service categories (no hierarchy). AI infers subcategory names from context.
+/// Each category has a 768-dim vector embedding for Atlas Vector Search.
+model ServiceCategory {
+  id          String  @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  description String?
+  icon        String?
+  embedding   Float[] // 768-dim vector embedding for semantic service discovery
+
+  providerServices ProviderService[]
+  bookings         Booking[]
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("service_categories")
+}
+
+/// Junction model linking a provider to the service categories they offer,
+/// with a price range (minPrice–maxPrice) per service.
+model ProviderService {
+  id         String          @id @default(auto()) @map("_id") @db.ObjectId
+  providerId String          @db.ObjectId
+  provider   User            @relation(fields: [providerId], references: [id])
+  categoryId String          @db.ObjectId
+  category   ServiceCategory @relation(fields: [categoryId], references: [id])
+
+  minPrice    Float
+  maxPrice    Float
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([providerId, categoryId])
+  @@map("provider_services")
+}
+
+/// Core booking entity tracking the full lifecycle:
+/// UNPAID → PENDING → INITIALIZED → PROVIDER_COMPLETED → COMPLETED / DISPUTED
+///                  ↘ CANCELLED (before INITIALIZED)
+model Booking {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  customerId String @db.ObjectId
+  customer   User   @relation("CustomerBookings", fields: [customerId], references: [id])
+
+  providerId String @db.ObjectId
+  provider   User   @relation("ProviderBookings", fields: [providerId], references: [id])
+
+  categoryId String          @db.ObjectId
+  category   ServiceCategory @relation(fields: [categoryId], references: [id])
+
+  // Booking details
+  status            BookingStatus @default(UNPAID)
+  subCategoryName   String? // AI-inferred subcategory (e.g., "AC Repair", "Leak Fix")
+  serviceDetails    String // AI-gathered description of the job
+  customerNotes     String? // Additional notes from the customer
+  scheduledAt       DateTime // Combined date + time
+  estimatedDuration Int? // Duration in minutes, determined by AI
+  location          Location
+
+  // Pricing (determined by AI)
+  totalAmount    Float
+  platformFee    Float? // 5% of totalAmount, calculated on completion
+  providerPayout Float? // 95% of totalAmount, calculated on completion
+
+  // AI provider matching
+  matchReasoning String? // AI reasoning for selecting this provider
+
+  // Cancellation tracking
+  cancelledBy CancelledBy?
+
+  // Lifecycle timestamps
+  paidAt        DateTime?
+  initializedAt DateTime?
+  completedAt   DateTime?
+  cancelledAt   DateTime?
+  disputedAt    DateTime?
+
+  // Relations
+  transactions Transaction[]
+  dispute      Dispute?
+  reviews      Review[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("bookings")
+}
+
+/// Mock transaction records for payment tracking.
+/// When fromUserId or toUserId is null, it represents the platform/company.
+model Transaction {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  bookingId String  @db.ObjectId
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  fromUserId String? @db.ObjectId // null = from platform
+  fromUser   User?   @relation("TransactionFrom", fields: [fromUserId], references: [id])
+
+  toUserId String? @db.ObjectId // null = to platform/company
+  toUser   User?   @relation("TransactionTo", fields: [toUserId], references: [id])
+
+  amount      Float
+  type        TransactionType
+  status      TransactionStatus @default(SUCCESS)
+  description String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("transactions")
+}
+
+/// Mutual reviews between customer and provider after booking completion.
+/// Each party can leave one review per booking (enforced by @@unique).
+model Review {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  bookingId String  @db.ObjectId
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  reviewerId String @db.ObjectId
+  reviewer   User   @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+
+  revieweeId String @db.ObjectId
+  reviewee   User   @relation("ReviewsReceived", fields: [revieweeId], references: [id])
+
+  rating  Int // 1–5 stars
+  comment String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([bookingId, reviewerId])
+  @@map("reviews")
+}
+
+/// Created when a customer disputes the provider's completion claim.
+/// Freezes provider payment until resolved.
+model Dispute {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  bookingId String  @unique @db.ObjectId
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  reason     String // Customer's description of the issue
+  status     DisputeStatus @default(OPEN)
+  resolution String? // Admin resolution notes
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("disputes")
+}
+
+/// One persistent chat per customer. Contains the full message history.
+model Chat {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  userId String @unique @db.ObjectId
+  user   User   @relation(fields: [userId], references: [id])
+
+  messages ChatMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("chats")
+}
+
+/// Chat messages with streaming support.
+/// `content` is the streamed text. `actions` holds structured UI elements
+/// (provider cards, pay buttons, booking summaries) as a JSON array.
+model ChatMessage {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  chatId String @db.ObjectId
+  chat   Chat   @relation(fields: [chatId], references: [id])
+
+  role    ChatMessageRole
+  content String // Text content (streamed, then persisted)
+  actions String? // JSON: array of action objects [{type, data}] for UI rendering
+
+  // AI internals (not displayed to user, used for context reconstruction)
+  toolCalls   String? // JSON: array of tool calls made by the AI
+  toolResults String? // JSON: results from tool execution
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("chat_messages")
+}
+
+/// Dedicated memory module for each booking intent.
+/// The AI creates one when it detects a new booking request and
+/// populates fields incrementally as it gathers info from the customer.
+/// Once the booking is created, isActive is set to false.
+model AIMemory {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  userId String @db.ObjectId
+  chatId String @db.ObjectId
+
+  currentStep AIMemoryStep @default(GATHERING_INFO)
+
+  // Draft fields (populated step by step by the AI)
+  serviceCategory   String?
+  subCategory       String?
+  serviceDetails    String?
+  scheduledDate     String?
+  scheduledTime     String?
+  estimatedDuration Int? // minutes
+  estimatedPrice    Float? // AI-determined price
+  location          MemoryLocation?
+
+  // Resolved DB references (set when AI maps names to actual records)
+  categoryId         String? @db.ObjectId
+  selectedProviderId String? @db.ObjectId
+
+  // Provider search results with reasoning (JSON array)
+  providerOptions String?
+
+  // State tracking
+  isActive    Boolean @default(true) // false after booking is created
+  isConfirmed Boolean @default(false) // customer confirmed all details
+  bookingId   String? @db.ObjectId // links to the created Booking
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("ai_memories")
+}
+
+/// In-app notifications for both customers and providers.
+model Notification {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  userId String @db.ObjectId
+  user   User   @relation(fields: [userId], references: [id])
+
+  type   NotificationType
+  title  String
+  body   String
+  data   String? // JSON payload (bookingId, etc.)
+  isRead Boolean          @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("notifications")
+}
